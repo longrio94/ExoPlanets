@@ -1,0 +1,517 @@
+---
+title: " Exoplanets- Visualization and Bayesian Analysis "
+author: "Hai Long, Le"
+date: "August 20, 2019"
+output: html_document
+runtime: shiny
+---
+
+## 0) Import Packages and Data.
+
+
+```{r message=FALSE, warning=FALSE}
+# Required Libraries
+library(readr)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(shiny)
+library(rstan)
+library(shinystan)
+library(ggiraph)
+library(gganimate)
+library(reshape2)
+library(tidyr)
+library(ggmap)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+data <- read_csv("D:/UCD/Advanced R/Assignment/Final Project/exo_data.csv")
+
+```
+
+Importing the csv data file using read_csv() as tibble. 
+
+
+```{r}
+str(data)
+```
+
+
+# _Part 1: Visualization_.
+
+## 1) Import the dataset exo_data.csv as a tibble. Columns 1, 16, 17, 18, 25 should be characters. Columns 2, 14 should be factors. Column 15 should be integers.The remaining columns should be doubles.
+
+
+Using the str() function to have a brief overview of the dataframe.
+
+Columns 1, 16, 17, 18, 25 are already in "character" type.  However, we need to convert 2,14,15 to appropriate datatype.
+
+
+I use the "%<>%" function of "magrittr" package to convert 3 variables (year, flag, meth) to suitable datatypes.
+
+
+```{r}
+#Columns 1, 16, 17, 18, 25 ALREADY be characters.  
+
+
+data$year %<>% as.integer # column 15 = year
+
+data$flag %<>% as.factor  # column 2 = flag
+
+#unique(data[,14]) # There are 5 different levels and NA for col14=meth.
+data$meth %<>% as.factor 
+```
+
+
+
+## 2) Exclude the exoplanets with an unknown method of discovery.
+
+```{r}
+data <- data %>% drop_na(meth)
+```
+
+
+Using drop_na() of dplyr package to drop rows containing missing values of "Meth"- method variable.
+
+Dataset now reduce to 3596 obs after remove NA of "meth".
+
+
+
+## 3) Create a histogram for the log-distances from the Sun, highlighting the methods of discovery.
+
+
+
+```{r}
+ggplot(data, aes(x=log(dist), fill=meth, color=meth)) +
+  geom_histogram(position="identity") +
+  labs(title="Log-Dist from Sun Histogram",x="Log-Dist from Sun (parsec)", y = "Count")
+```
+
+
+Using ggplot to create a histogram for the log-distances from the Sun, highlighting the methods of discovery by color.
+
+
+
+## 4) Create scatterplots of the log-mass versus log-distances, separating by methods of discovery. Hovering with the cursor highlights the point and displays its name, and, if you click, the exoplanet's page on the Open Exoplanet Catalogue will be opened. 
+
+
+(paste the id after http://www.openexoplanetcatalogue.com/planet/ ).
+
+
+First, I create "onclick" variable to have the website link for each planet. After that, using ggplot to createscatterplots of the log-mass versus log-distances, separating by methods of discovery. Lastly, using "geom_point_interactive" to create Hovering with the cursor highlights the point and displays its name.
+
+If you click on the scatter point, the exoplanet's page on the Open Exoplanet Catalogue will be opened. 
+
+
+
+```{r}
+data$onclick <- sprintf("window.open(\"%s%s\")",
+                        "http://www.openexoplanetcatalogue.com/planet/",
+                        data$id)
+
+gg_graph = ggplot(data,
+                  aes(x = log(mass),
+                      y = log(dist),
+                      color = meth)) +
+                  xlab('Log(Mass)') +
+                  ylab('Log(Dist') +
+                  scale_color_discrete(name="Discovery Method")+
+                  geom_point_interactive(aes(data_id = id,
+                             tooltip = id,
+                             onclick = onclick)) +
+                  labs(title="Scatterplots of log-mass vs. log-distances")
+
+ggiraph(code = print(gg_graph))
+
+```
+
+
+
+## 5) Rename the radius into jupiter_radius, and create a new column called earth_radius which is 11.2 / the Jupiter radius.
+
+
+```{r}
+data <- data %>% 
+          rename(jupiter_radius = radius ) # rename() function from tidyverse with pipe.
+
+data <- data %>%
+          mutate(earth_radius = jupiter_radius / 11.2 ) 
+
+```
+
+Using rename() to rename the radius into jupiter_radius
+
+Using mutate() to create new variable earth_radius from jupiter_radius.
+
+
+
+## 6) Focus only on the rows where log-radius of Earth and log-period have no missing values, and perform kmeans with four clusters on these two columns.
+
+
+
+First of all, I create new dataframe called "data_clustering" from "data". The "data_clustering" only focus on the rows where radius of Earth and period have no missing values. Also, we add Log-scale for both radius of Earth and period. We only use this 2 covariates to perform k-means clustering with 4-cluster.
+ 
+
+
+```{r}
+
+data_clustering <- data # create new df for clustering from data
+
+# Focus only on the rows where radius of Earth and period have no missing values
+data_clustering <- data %>% drop_na(earth_radius, period)  # 2732 obs
+
+#log-radius of Earth and log-period
+data_clustering <- data_clustering %>%
+                      mutate(LogERadius = log(earth_radius),
+                             LogPeriod  = log(period))
+
+
+# data to perform Kmeans
+data_kmeans <- data_clustering %>%
+                      select(LogERadius,LogPeriod)
+
+# perform k-means
+set.seed(123)
+cluster_kmeans  <- kmeans(data_kmeans, 4)
+
+```
+
+
+```{r}
+table(cluster_kmeans$cluster)
+```
+
+
+
+## 7*) Add the clustering labels to the dataset through a new factor column called 'type', with levels 'rocky', 'hot_jupiters', 'cold_gas_giants', 'others'; 
+
+
+
+```{r}
+cluster_kmeans$cluster <- as.factor(cluster_kmeans$cluster)
+
+ggplot(data_kmeans, aes(LogPeriod,LogERadius ,color = cluster_kmeans$cluster)) + geom_point() +
+                                      labs(title="Clustering solutions of Exoplanets")
+```
+
+
+We visualize the clustering solutions and the plot highlights 4 clusters by colors.
+Refering to https://en.wikipedia.org/wiki/Exoplanet#/media/File:ExoplanetPopulations-20170616.png , Add the clustering labels to the dataset.
+
+The cluster 1,2,3,4 are equivalent to "cold_gas_giants", "others", "Rocky", "hot_jupiters", respectively. 
+
+
+```{r}
+# Using https://en.wikipedia.org/wiki/Exoplanet#/media/File:ExoplanetPopulations-20170616.png we have:
+# 1 = cold_gas_giants 
+# 2 = others 
+# 3 = Rocky 
+# 4 = hot_jupiters 
+
+data_clustering$type <- cluster_kmeans$cluster
+data_clustering$type <- as.numeric(data_clustering$type)
+
+data_clustering$type[data_clustering$type == 1] <- "cold_gas_giants"
+data_clustering$type[data_clustering$type == 2] <- "others"
+data_clustering$type[data_clustering$type == 3] <- "Rocky"
+data_clustering$type[data_clustering$type == 4] <- "hot_jupiters"
+```
+
+```{r}
+table(cluster_kmeans$cluster)
+table(data_clustering$type) ## checking
+```
+
+
+
+
+## 8) Use a histogram and a violin plot to illustrate how these clusters relate to the log-mass of the exoplanet.
+
+
+Using ggplot to illustrate how these clusters relate to the log-mass of the exoplanet. geom_histogram for histogram, and geom_violin for violin plot. 
+
+
+
+
+```{r}
+# Histogram
+ggplot(data_clustering, aes(x = log(mass))) +
+                            geom_histogram(aes(color = type, fill = type), 
+                                            position = "identity", bins = 30, alpha = 0.4) +
+                                                       labs(title="Histogram of the log-mass of the exoplanet")
+
+```
+
+```{r}
+# Violin 
+ggplot(data_clustering, aes(x = type, y = log(mass))) + 
+  geom_violin() + labs(title="Violin plot of log-mass of the exoplanet")
+```
+
+
+## 9*) transform r_asc and decl into the equivalent values in seconds and use these as coordinates to represent a celestial map for the exoplanets.
+
+
+```{r}
+head(data$r_asc) # [hh mm ss]
+head(data$decl)   #Declination [+/-dd mm ss]
+```
+
+```{r}
+library(lubridate)
+```
+
+
+```{r}
+# conver r_asc to seconds and save as r_asc_sec
+data$r_asc <- gsub(" ", ":", data$r_asc, fixed=TRUE) # convert to hh:mm:ss
+data$r_asc <- hms(data$r_asc) 
+data$r_asc_sec <- period_to_seconds(data$r_asc)
+
+# convert Declination to seconds and save as decl_sec
+data$decl <- gsub(" ", ":", data$decl, fixed=TRUE) # convert to dd:mm:ss, where dd=3600ss
+data$decl <- hms(data$decl) # for Decl, dd is similar to hh where :=3600ss
+data$decl_sec <- period_to_seconds(data$decl)
+```
+
+
+```{r}
+# scatter plot represents a celestial map for the exoplanets
+ggplot(data, aes(r_asc_sec, decl_sec, color= meth)) +
+                            geom_point() + 
+                        labs(title="Celestial Map for Exoplanets", x="Right ascension (seconds)",
+                             y="declination (seconds)")
+```
+
+
+
+
+## 10) create an animated time series where multiple lines illustrate the evolution over time of the total number of exoplanets discovered for each method up to that year.
+
+
+
+```{r}
+ts.data <- data %>% group_by(meth, year) %>%  summarise(Count = length(meth)) %>%
+                          mutate(Count = cumsum(Count))
+
+```
+
+
+```{r}
+ts.data <- na.omit(ts.data)
+```
+
+
+```{r}
+ggplot(ts.data, aes(x = year, y = Count, group = meth)) + 
+  geom_line(aes(color = meth)) + 
+  geom_point(size = 2) + 
+  transition_reveal(year) + 
+  labs(title = 'Evolution Total number of exoplanets discovered by methods', y = 'Number Discovered') 
+```
+
+
+
+
+## 11*) create an interactive plot with Shiny where you can select the year (slider widget, with values >= 2009) and exoplanet type. Exoplanets appear as points on a scatterplot (log-mass vs log-distance coloured by method) only if they have already been discovered. If type is equal to "all" all types are plotted together.
+
+#### Shiny code is shown here but the Shiny Plot will we displayed later in the last part.
+
+
+
+```{r}
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+  
+  # Application title
+  titlePanel("scatterplot of log-mass vs log-distance of Exoplanet"),
+  
+  # Sidebar with a slider input for number of bins 
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("id1",
+                  "SELECT YEAR:",
+                  min = 2009,
+                  max = 2019,
+                  value = 2012)
+    ,
+    
+    # Let user select "exoplanet type" by SelectInput
+    selectInput("id2",
+                "SELECT EXOPLANET TYPE:",
+                choices = c("Rocky","cold_gas_giants", "hot_jupiters", "others", "all"))
+    ),
+    
+    # Show a plot of the generated distribution
+    mainPanel(
+      plotOutput("scatterPlot") # was distPlot
+    )
+  )
+)
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+  
+  output$scatterPlot <- renderPlot({
+    # Get the User Input and cols will be used
+    xdata    <- data_clustering[,c("mass","dist","year", "meth", "type")]
+  
+    idyear = input$id1
+    idmeth = input$id2
+    
+    # Filter the data based on user input. 
+    xdata <- xdata %>% filter(year <= idyear)
+    
+    if (idmeth == "all") # If the user want to see all "Type"
+    {
+      ggplot(xdata,aes(x = log(mass),
+                       y = log(dist),
+                       color = meth)) +
+        xlab('Log(Mass)') +
+        ylab('Log(Dist') +
+        geom_point() +
+        facet_wrap( ~ type, ncol=2)
+    }
+    
+    else # if not, filter out the "type"
+    {
+    
+    xdata <- xdata %>% filter(type == idmeth)
+    
+    # draw the Scatter Plot with the specified Year and Type
+    ggplot(xdata,aes(x = log(mass),
+                     y = log(dist),
+                     color = meth)) +
+                     xlab('Log(Mass)') +
+                     ylab('Log(Dist') +
+                    geom_point()
+    }
+    
+  })
+}
+
+#### The Shiny App plot will be shown in (15) #####
+
+```
+
+
+# _Part 2: STAN- Bayesian Analysis_.
+
+
+## 12) Use STAN to perform likelihood maximisation on a regression model where log-period is the response variable and the logs of host_mass, host_temp and axis are the covariates (exclude rows that contain at least one missing value). Include an intercept term in the regression model.
+
+
+```{r}
+fileName <- "D:/UCD/Advanced R/Assignment/Final Project/Submit/MLR_Project.stan"
+stan_code <- readChar(fileName, file.info(fileName)$size)
+cat(stan_code)
+```
+
+
+```{r}
+
+stan.data <- data[,c("host_mass","host_temp","axis", "period")] #select Covariates to stan.data
+
+stan.data.complete <- na.omit(stan.data) #exclude rows that contain at least one missing value
+
+stan.data.complete <- stan.data.complete %>%                          # Log scale of all Variables.
+                                  mutate(host_mass = log(host_mass),
+                                         host_temp = log(host_temp),
+                                         axis = log(axis),
+                                         period = log(period)) 
+
+
+# to save time when you recompile an already compiled file:
+rstan_options(auto_write = TRUE)
+
+# Always good to enable parallel running if available:
+options(mc.cores = parallel::detectCores())
+
+# Set up your data into the correct format, save it as a list with the same names as in the stan file
+data_mlr = list(N = nrow(stan.data.complete), #  number of observations
+               K = 3,                        #  number of explanatory variables
+               y = stan.data.complete$period,
+               x =  as.matrix(stan.data.complete[,c("host_mass","host_temp","axis")])) # x now is matrix with [N,K] dimensions
+
+
+# Call Model from separate Stan file
+stan_model_mlr = stan_model('D:/UCD/Advanced R/Assignment/Final Project/Submit/MLR_Project.stan')
+
+#Fit the model with either the optimizing (Maximum likelihood version because have not specified Prior)
+stan_run_mlr = optimizing(stan_model_mlr, data = data_mlr)
+
+```
+
+
+
+```{r}
+# Print the output likelihood maximisation on a regression model
+print(stan_run_mlr)
+```
+
+
+
+## 13) Extend the model in (12) by specifying standard Gaussian priors for the intercept and slope terms, and a Gamma(1,1) prior for the standard deviation of errors. Obtain approximate samples from the posterior distribution of the model. 
+
+
+```{r}
+fileName1 <- "D:/UCD/Advanced R/Assignment/Final Project/Submit/MLR_Project_Prior.stan"
+stan_code1 <- readChar(fileName1, file.info(fileName1)$size)
+cat(stan_code1)
+```
+
+
+```{r}
+stan_model_mlr_prior = stan_model('D:/UCD/Advanced R/Assignment/Final Project/Submit/MLR_Project_Prior.stan')
+
+
+# The full Bayesian way
+stan_run_lr_bayes = sampling(stan_model_mlr_prior,
+                             data = data_mlr)
+
+```
+
+
+```{r}
+print(stan_run_lr_bayes)
+```
+
+
+
+## 14) Include in your RMarkdown document a few posterior summaries plots (e.g. estimated posterior densities) from (13) for the parameters of interest.
+
+
+```{r}
+plot(stan_run_lr_bayes) # Not always helpful if parameters on very different scales
+```
+
+
+
+```{r}
+plot(stan_run_lr_bayes, show_density = TRUE, ci_level = 0.5, fill_color = "purple")
+```
+
+
+```{r}
+stan_hist(stan_run_lr_bayes)
+```
+
+
+```{r}
+plot(stan_run_lr_bayes, plotfun = "trace")
+```
+
+
+
+
+## 15) Embed the Shiny app from (11) in your RMarkdown document.
+
+
+```{r}
+# Run the application 
+shinyApp(ui = ui, server = server)
+```
+
