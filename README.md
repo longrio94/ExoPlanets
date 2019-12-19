@@ -4,5 +4,4 @@
 #### Clustering Exoplanets with well-known and classic K-means technique.
 #### Bayesian Analysis using Rstan package.
 
-
-
+#### Please note that: PDF is created for quick viewing. However, The RMD file must fully run in local computer to show Rshiny and dynamic plots.
